@@ -1,0 +1,6 @@
+# Auto detect text files and perform LF normalization
+
+*.cs     diff=csharp
+*.cpp    diff=cpp
+*.h      diff=cpp
+*.inl    diff=cpp
