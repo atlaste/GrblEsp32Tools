@@ -1,10 +1,11 @@
 ﻿using System;
-using System.Collections.Generic;
+using System.Diagnostics;
+using System.IO;
 using System.IO.Ports;
 using System.Linq;
 using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace TestGrblDifferences
 {
@@ -12,64 +13,116 @@ namespace TestGrblDifferences
     {
         static void Main(string[] args)
         {
-            if (args.Length != 4)
+            if (args.Length != 2)
             {
-                Console.WriteLine("Usage: TestGrblDifferences [com1] [baud] [com7] [baud]");
-                Console.WriteLine(" - The first COM port is the port that should be correct. Dumped as 'C: '.");
-                Console.WriteLine(" - The second COM port is the port that is validated. Dumped as 'V: '.");
+                Console.WriteLine("Usage: Test [com port, e.g. COM7] \"[firmware file.elf]\"");
             }
-            else
+
+            var environmentVariables = Environment.GetEnvironmentVariables();
+            var path = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+
+            var gdbPath = Path.Combine(path, @"arduino15\packages\esp32\tools\xtensa-esp32-elf-gcc\");
+            //1.22.0-80-g6c4433a-5.2.0\bin\xtensa-esp32-elf-gdb.exe");
+            if (Directory.Exists(gdbPath))
             {
-                Console.WriteLine("Press 'q' to quit.");
-                SerialPort port1 = new SerialPort(args[0], int.Parse(args[1]));
-                SerialPort port2 = new SerialPort(args[2], int.Parse(args[3]));
+                gdbPath = Directory.GetFiles(gdbPath, "xtensa-esp32-elf-gdb.exe", SearchOption.AllDirectories).FirstOrDefault();
+            }
 
-                port1.Open();
-                port2.Open();
-                try
+            if (gdbPath == null || !File.Exists(gdbPath))
+            {
+                Console.WriteLine("Cannot find gdb.");
+                return;
+            }
+
+            var firmware = args[1];
+            if (!File.Exists(firmware))
+            {
+                Console.WriteLine("Cannot find firmware file.");
+                return;
+            }
+
+
+            Console.WriteLine("Press 'q' to quit.");
+            Console.WriteLine(string.Join(", ", SerialPort.GetPortNames()));
+
+            bool closed = false;
+
+            SerialPort port = new SerialPort(args[0], 115200);
+            port.Open();
+            try
+            {
+                Thread t2 = new Thread(() =>
                 {
-                    Thread t1 = new Thread(() =>
+                    Thread.MemoryBarrier();
+                    while (!closed)
                     {
-                        while (true)
+                        try
                         {
-                            string s = port1.ReadLine();
-                            Console.WriteLine($"C: {s}");
-                        }
-                    })
-                    { IsBackground = true, Name = "Original" };
-
-                    Thread t2 = new Thread(() =>
-                    {
-                        while (true)
-                        {
-                            string s = port2.ReadLine();
+                            string s = port.ReadLine();
                             Console.WriteLine($"V: {s}");
+
+                            var matches = Regex.Matches(s,
+                                "0x[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]:0x[A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9][A-Z0-9]");
+                            if (matches.Count != 0)
+                            {
+                                foreach (var match in matches)
+                                {
+                                    var addr = match.ToString().Split(':');
+                                    if (addr.Length == 2)
+                                    {
+                                        Console.Write(addr[0]);
+
+                                        ProcessStartInfo psi = new ProcessStartInfo();
+                                        psi.FileName = gdbPath;
+                                        StringBuilder argBuilder = new StringBuilder();
+                                        argBuilder.Append("--batch \"");
+                                        argBuilder.Append(firmware);
+                                        argBuilder.Append("\" -ex \"set listsize 1\" -ex \"l *");
+                                        argBuilder.Append(addr[0]);
+                                        argBuilder.Append("\" -ex \"q\"");
+                                        psi.Arguments = argBuilder.ToString();
+                                        psi.UseShellExecute = false;
+                                        psi.RedirectStandardOutput = true;
+
+                                        using (var process = new Process())
+                                        {
+                                            process.StartInfo = psi;
+                                            process.Start();
+                                            var line = process.StandardOutput.ReadToEnd();
+                                            Console.WriteLine("> " + line.Trim());
+                                            process.WaitForExit();
+                                        }
+                                    }
+                                }
+                            }
                         }
-                    })
-                    { IsBackground = true, Name = "Validate" };
+                        catch { }
 
-                    t1.Start();
-                    t2.Start();
-
-                    while (true)
-                    {
-                        string input = Console.ReadLine();
-                        if (input == "q" || input == "Q")
-                        {
-                            port1.Close();
-                            port2.Close();
-                            return;
-                        }
-
-                        port1.WriteLine(input);
-                        port2.WriteLine(input);
+                        Thread.MemoryBarrier();
                     }
-                }
-                finally
+                })
+                { IsBackground = true, Name = "Validate" };
+
+                t2.Start();
+
+                while (true)
                 {
-                    port1.Close();
-                    port2.Close();
+                    string input = Console.ReadLine();
+                    if (input == "q" || input == "Q")
+                    {
+                        //port1.Close();
+                        port.Close();
+                        return;
+                    }
+
+                    port.WriteLine(input);
                 }
+            }
+            finally
+            {
+                port.Close();
+                closed = true;
+                Thread.MemoryBarrier();
             }
         }
     }
