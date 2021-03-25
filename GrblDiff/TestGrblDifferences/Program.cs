@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.IO.Ports;
@@ -51,6 +52,96 @@ namespace TestGrblDifferences
             {
                 ParseStackTrace(stacktrace, gdbPath, firmware);
             }
+
+            /*
+            // Run job:
+            var lines = File.ReadAllLines(@"C:\Tmp\esp32fail\xTestBlockM4fast.nc").ToList();
+            SerialPort port = new SerialPort(args[0], 115200);
+            port.Open();
+
+            Queue<int> todo = new Queue<int>();
+            int total = 0;
+
+            int n = 0;
+            foreach (var line in lines)
+            {
+                List<string> ll = new List<string>();
+                int last = 0;
+                for (int i = 0; i < line.Length; ++i)
+                {
+                    if (line[i] == 'G' || line[i] == 'g')
+                    {
+                        string q = line.Substring(last, i - last);
+                        if (!string.IsNullOrEmpty(q)) { ll.Add(q); }
+                        last = i;
+                    }
+                    else if (line[i] == ';')
+                    {
+                        string q = line.Substring(last, i - last);
+                        if (!string.IsNullOrEmpty(q)) { ll.Add(q); }
+                        last = line.Length;
+                        break;
+                    }
+                }
+                {
+                    string q = line.Substring(last);
+                    if (!string.IsNullOrEmpty(q)) { ll.Add(q); }
+                }
+
+
+                foreach (var s in ll)
+                {
+                    if (!s.StartsWith(";") && !string.IsNullOrWhiteSpace(s))
+                    {
+                        bool emitted = false;
+
+                        while (!emitted && port.IsOpen)
+                        {
+                            int len = s.Length + 2;
+                            if (len + total < 255)
+                            {
+                                ++n;
+                                port.WriteLine(s);
+                                emitted = true;
+
+                                total += len;
+                                todo.Enqueue(len);
+                            }
+                            else
+                            {
+                                Thread.Sleep(1);
+                            }
+                            if (port.BytesToRead != 0)
+                            {
+                                string response = port.ReadLine().Trim();
+                                // Console.WriteLine(response);
+
+                                var processed = todo.Dequeue();
+                                total -= processed;
+
+                                // if (response != "ok")
+                                // {
+                                Console.WriteLine("> {0}", response);
+                                // }
+                                // else
+                                // {
+                                //     Console.Write('.');
+                                // }
+
+                                if ((n % 100) == 0)
+                                {
+                                    port.WriteLine("?\r\n");
+                                    string response2 = port.ReadLine().Trim();
+                                    Console.WriteLine(response2);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Console.WriteLine("Done.");
+            */
 
             bool closed = false;
 
